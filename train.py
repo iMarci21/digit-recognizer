@@ -74,8 +74,9 @@ def main():
     # Convert pixel ints [0 - 255] to floats [0.0 - 1.0].
     # Subtracts the mean and then divide by standart deviation to get inputs
     # near 0, which helps to converge faster and more reliably
-    transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+    transform = transforms.Compose([
+        transforms.RandomAffine(degrees=10, translate=(0.08, 0.08), scale=(0.95,1.05)),
+        transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
 
     print("Loading MNIST dataset...")
