@@ -14,6 +14,10 @@ class DigitRecognizerApp:
         self.root.title("Handwritten Digit Recognizer")
         self.root.resizable(False, False)
 
+        # Track previous mouse coordinates for smooth continuous lines
+        self.last_x = None
+        self.last_y = None
+
         # In-memory PIL Image matching canvas dimensions (black background)
         self.pil_image = Image.new("L", (CANVAS_SIZE, CANVAS_SIZE), color=0)
         self.draw = ImageDraw.Draw(self.pil_image)
@@ -40,7 +44,7 @@ class DigitRecognizerApp:
             self.root,
             width=CANVAS_SIZE,
             height=CANVAS_SIZE,
-            bg="black",  # if its not black it will break
+            bg="black",
             cursor="crosshair",
             highlightthickness=2,
             highlightbackground="#444444",
@@ -101,25 +105,36 @@ class DigitRecognizerApp:
     def _paint(self, event):
         x, y = event.x, event.y
         r = BRUSH_SIZE // 2
-        # Draw on Tkinter canvas
-        self.canvas.create_oval(
-            x - r,
-            y - r,
-            x + r,
-            y + r,
-            fill="white", # if its not white it will break
-            outline="white",
-        )
-        # Mirror drawing on in-memory PIL image
-        self.draw.ellipse([x - r, y - r, x + r, y + r], fill=255)
+
+        if self.last_x is not None and self.last_y is not None:
+            # Draw a smooth connected line between points
+            self.canvas.create_line(
+                self.last_x, self.last_y, x, y,
+                width=BRUSH_SIZE, fill="white", capstyle=tk.ROUND, smooth=True
+            )
+            self.draw.line([(self.last_x, self.last_y), (x, y)], fill=255, width=BRUSH_SIZE)
+            # Add round end cap to PIL line
+            self.draw.ellipse([x - r, y - r, x + r, y + r], fill=255)
+        else:
+            # Starting dot of a new stroke
+            self.canvas.create_oval(x - r, y - r, x + r, y + r, fill="white", outline="white")
+            self.draw.ellipse([x - r, y - r, x + r, y + r], fill=255)
+
+        self.last_x, self.last_y = x, y
 
     def _on_stroke_end(self, event):
+        # Reset mouse tracking so the next stroke doesn't connect to this one
+        self.last_x = None
+        self.last_y = None
+
         # Auto-predict after every mouse stroke
         if self.model_loaded:
             self.run_prediction()
 
     def clear_canvas(self):
         self.canvas.delete("all")
+        self.last_x = None
+        self.last_y = None
         self.pil_image = Image.new("L", (CANVAS_SIZE, CANVAS_SIZE), color=0)
         self.draw = ImageDraw.Draw(self.pil_image)
         self.prediction_label.config(text="Prediction: -")
