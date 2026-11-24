@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw
 from predict import load_trained_model, predict
 
 INITIAL_CANVAS_SIZE = 280
+LIVE_PREDICT_DELAY_MS = 100
 
 
 class DigitRecognizerApp:
@@ -12,7 +13,7 @@ class DigitRecognizerApp:
         self.root = root
         self.root.title("Handwritten Digit Recognizer")
         self.root.resizable(True, True)
-        self.root.minsize(300, 420)
+        self.root.minsize(320, 420)
 
         # Current canvas dimensions (updated dynamically when window resizes)
         self.canvas_w = INITIAL_CANVAS_SIZE
@@ -21,6 +22,10 @@ class DigitRecognizerApp:
         # Track previous mouse coordinates for smooth continuous lines
         self.last_x = None
         self.last_y = None
+
+        # Live prediction state and scheduled Tkinter timer ID
+        self.live_predict = True
+        self._predict_job = None
 
         # In-memory PIL Image matching canvas dimensions (black background)
         self.pil_image = Image.new("L", (self.canvas_w, self.canvas_h), color=0)
@@ -51,21 +56,21 @@ class DigitRecognizerApp:
             btn_frame,
             text="Clear Canvas",
             font=("Helvetica", 11),
-            width=12,
+            width=13,
             command=self.clear_canvas,
         )
         self.btn_clear.grid(row=0, column=0, padx=6)
 
-        self.btn_predict = tk.Button(
+        self.btn_live = tk.Button(
             btn_frame,
-            text="Predict",
+            text="Live Predict: ON",
             font=("Helvetica", 11, "bold"),
-            width=12,
+            width=16,
             bg="#007acc",
             fg="white",
-            command=self.run_prediction,
+            command=self.toggle_live_predict,
         )
-        self.btn_predict.grid(row=0, column=1, padx=6)
+        self.btn_live.grid(row=0, column=1, padx=6)
 
         # Result display (pinned above buttons)
         self.result_frame = tk.Frame(self.root)
@@ -155,16 +160,41 @@ class DigitRecognizerApp:
 
         self.last_x, self.last_y = x, y
 
+        # Schedule a throttled live prediction while actively drawing
+        if self.live_predict and self.model_loaded and self._predict_job is None:
+            self._predict_job = self.root.after(
+                LIVE_PREDICT_DELAY_MS, self._run_scheduled_prediction
+            )
+
+    def _run_scheduled_prediction(self):
+        self._predict_job = None
+        self.run_prediction()
+
+    def _cancel_scheduled_prediction(self):
+        if self._predict_job is not None:
+            self.root.after_cancel(self._predict_job)
+            self._predict_job = None
+
     def _on_stroke_end(self, event):
         # Reset mouse tracking so the next stroke doesn't connect to this one
         self.last_x = None
         self.last_y = None
 
-        # Auto-predict after every mouse stroke
+        # Cancel any queued timer and immediately run final prediction for the stroke
+        self._cancel_scheduled_prediction()
         if self.model_loaded:
             self.run_prediction()
 
+    def toggle_live_predict(self):
+        self.live_predict = not self.live_predict
+        if self.live_predict:
+            self.btn_live.config(text="Live Predict: ON", bg="#007acc", fg="white")
+        else:
+            self._cancel_scheduled_prediction()
+            self.btn_live.config(text="Live Predict: OFF", bg="#d9d9d9", fg="#333333")
+
     def clear_canvas(self):
+        self._cancel_scheduled_prediction()
         self.canvas.delete("all")
         self.last_x = None
         self.last_y = None
@@ -172,7 +202,9 @@ class DigitRecognizerApp:
         self.draw = ImageDraw.Draw(self.pil_image)
         self.prediction_label.config(text="Prediction: -")
         self.confidence_label.config(
-            text="Confidence: -" if self.model_loaded else "!! No model.pt. Run train.py first !!"
+            text="Confidence: -"
+            if self.model_loaded
+            else "!! No model.pt. Run train.py first !!"
         )
 
     def run_prediction(self):
